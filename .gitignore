@@ -1,0 +1,36 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# --- Env & secrets ---
+.env
+*.env
+!.env.example
+
+# --- Database ---
+*.db
+*.sqlite3
+
+# --- Storage (recorded media should not be committed) ---
+storage/recordings/*
+storage/snapshots/*
+!storage/recordings/.gitkeep
+!storage/snapshots/.gitkeep
+
+# --- ML model weights ---
+*.pt
+*.onnx
+
+# --- Node / frontend (Phase 9) ---
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+.DS_Store

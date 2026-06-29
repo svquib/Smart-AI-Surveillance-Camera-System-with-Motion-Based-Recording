@@ -1,0 +1,33 @@
+# ---- Phase 1: web framework + config (install these now) ----
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+
+# ---- Phase 7+: auth & validation ----
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.20
+
+# ---- Phase 8: database ----
+sqlalchemy==2.0.36
+alembic==1.14.0
+# psycopg2-binary==2.9.10   # uncomment when switching SQLite -> PostgreSQL
+
+# ---- Phase 2: camera + frames (install these now) ----
+opencv-python==4.10.0.84
+numpy==1.26.4               # <2.0 required by ultralytics; works with opencv + torch
+
+# ---- Phase 5: YOLOv11 object detection (install now) ----
+ultralytics==8.3.0          # YOLOv11; pulls in torch + torchvision automatically
+
+# ---- Phase 6: activity recognition (install now) ----
+mediapipe==0.10.18          # Pose landmarks; requires numpy<2 (already pinned)
+
+# ---- Phase 10: notifications ----
+# httpx==0.28.1             # Telegram Bot API calls
+
+# ---- Dev / testing ----
+pytest==8.3.4
+httpx==0.28.1
