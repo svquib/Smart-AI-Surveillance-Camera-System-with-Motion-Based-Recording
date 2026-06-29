@@ -17,9 +17,15 @@ from app.core.logging import get_logger
 from app.models.alert import Alert
 from app.models.event import Event
 from app.services.decision import DecisionContext, DecisionEngine
+from app.services.telegram import TelegramNotifier
 
 logger = get_logger(__name__)
 _engine = DecisionEngine()
+_notifier = TelegramNotifier()
+
+# Only these alert types get pushed to Telegram — "info" stays in the DB only,
+# so we don't spam the phone on every routine sighting.
+_PUSH_TYPES = {"emergency", "suspicious"}
 
 
 def record_event(
@@ -66,6 +72,15 @@ def record_event(
     if drafts:
         logger.info("Event %d saved with %d alert(s): %s",
                     event.id, len(drafts), [d.type for d in drafts])
+        # Push the urgent ones to Telegram with the snapshot + clip attached.
+        for d in drafts:
+            if d.type in _PUSH_TYPES:
+                _notifier.send_alert(
+                    alert_type=d.type,
+                    message=d.message,
+                    snapshot_path=snapshot_path,
+                    video_path=video_path,
+                )
     else:
         logger.info("Event %d saved (no alerts)", event.id)
     return event

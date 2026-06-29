@@ -14,7 +14,7 @@ python-multipart==0.0.20
 # ---- Phase 8: database ----
 sqlalchemy==2.0.36
 alembic==1.14.0
-# psycopg2-binary==2.9.10   # uncomment when switching SQLite -> PostgreSQL
+psycopg2-binary==2.9.10     # PostgreSQL driver (used by the Docker stack)
 
 # ---- Phase 2: camera + frames (install these now) ----
 opencv-python==4.10.0.84
@@ -27,8 +27,7 @@ ultralytics==8.3.0          # YOLOv11; pulls in torch + torchvision automaticall
 mediapipe==0.10.18          # Pose landmarks; requires numpy<2 (already pinned)
 
 # ---- Phase 10: notifications ----
-# httpx==0.28.1             # Telegram Bot API calls
+httpx==0.28.1               # Telegram Bot API calls (also used by tests)
 
 # ---- Dev / testing ----
 pytest==8.3.4
-httpx==0.28.1

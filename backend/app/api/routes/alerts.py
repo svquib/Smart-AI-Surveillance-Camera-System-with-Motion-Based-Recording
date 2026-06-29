@@ -4,10 +4,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.alert import Alert
+from app.models.event import Event
 from app.models.user import User
 from app.schemas.alert import AlertCreate, AlertOut, AlertUpdate
+from app.services.telegram import TelegramNotifier
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
+_notifier = TelegramNotifier()
 
 
 @router.get("", response_model=list[AlertOut])
@@ -31,11 +34,25 @@ def send_alert(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    # For now this just records the alert. Phase 10 hooks Telegram in right here.
+    """Record an alert and push it to Telegram (if configured)."""
     alert = Alert(**payload.model_dump())
     db.add(alert)
     db.commit()
     db.refresh(alert)
+
+    # If it's tied to an event, grab that event's snapshot/clip to attach.
+    snapshot = video = None
+    if alert.event_id:
+        ev = db.get(Event, alert.event_id)
+        if ev:
+            snapshot, video = ev.snapshot_path, ev.video_path
+
+    _notifier.send_alert(
+        alert_type=alert.type,
+        message=alert.message,
+        snapshot_path=snapshot,
+        video_path=video,
+    )
     return alert
 
 

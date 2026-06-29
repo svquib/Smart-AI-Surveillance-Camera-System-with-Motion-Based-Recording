@@ -1,0 +1,58 @@
+# One command to bring up Postgres + the API + the dashboard:
+#   docker compose up --build
+#
+# What runs where:
+#   db        -> Postgres 16
+#   backend   -> FastAPI on http://localhost:8000
+#   frontend  -> dashboard on http://localhost:5173
+#
+# The webcam pipeline (run_surveillance.py) and the live MJPEG feed are NOT in
+# here — they need direct camera access, which Docker Desktop on macOS can't
+# give a container. Run those on the host against the same Postgres if you want
+# events flowing into the dockerised stack (point DATABASE_URL at localhost:5432).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: surveil
+      POSTGRES_PASSWORD: surveil
+      POSTGRES_DB: surveillance
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U surveil -d surveillance"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://surveil:surveil@db:5432/surveillance
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      AUTO_CREATE_TABLES: "true"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage:/storage   # recorded clips + snapshots persist on the host
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000/api/v1
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

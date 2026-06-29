@@ -26,6 +26,8 @@ next to the video so nothing is lost.
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import time
 from collections import deque
 from dataclasses import asdict, dataclass, field
@@ -52,9 +54,11 @@ class RecorderConfig:
     pre_buffer_seconds: int = settings.PRE_BUFFER_SECONDS
     post_motion_seconds: float = 3.0    # keep recording this long after motion ends
     max_clip_seconds: int = 120         # safety cap so a clip can't grow forever
-    fourcc: str = "mp4v"                # codec; "mp4v" -> .mp4, widely compatible
     extension: str = "mp4"
     camera_name: str = "camera-1"       # used in filenames + metadata
+    # Browsers only play H.264-in-MP4. We try to encode it directly; if OpenCV
+    # can't, and ffmpeg is on PATH, we transcode the clip after recording.
+    transcode_to_h264: bool = True
 
 
 @dataclass
@@ -103,6 +107,7 @@ class MotionRecorder:
         self._video_path: Optional[Path] = None
         self._snapshot_path: Optional[Path] = None
         self._trigger_score = 0
+        self._needs_transcode = False   # set when we fell back to a non-web codec
 
     # ---- public API ------------------------------------------------------
     @property
@@ -152,13 +157,9 @@ class MotionRecorder:
         self._video_path = self.config.output_dir / f"{name}.{self.config.extension}"
         self._snapshot_path = self.config.snapshot_dir / f"{name}.jpg"
 
-        fourcc = cv2.VideoWriter_fourcc(*self.config.fourcc)
-        self._writer = cv2.VideoWriter(
-            str(self._video_path), fourcc, self.config.fps, (w, h)
-        )
-        if not self._writer.isOpened():
+        self._writer, self._needs_transcode = self._open_writer(w, h)
+        if self._writer is None:
             logger.error("Failed to open VideoWriter for %s", self._video_path)
-            self._writer = None
             return
 
         # Snapshot at the trigger moment (used later for SOS alerts).
@@ -178,10 +179,63 @@ class MotionRecorder:
             self._video_path.name, len(self._prebuffer), score,
         )
 
+    def _open_writer(self, w: int, h: int) -> tuple[Optional[cv2.VideoWriter], bool]:
+        """Prefer a browser-playable H.264 writer; fall back to mp4v if needed.
+
+        Returns (writer, needs_transcode). needs_transcode is True when we had
+        to fall back to mp4v and should re-encode with ffmpeg afterwards.
+        """
+        path = str(self._video_path)
+        # 1) Try H.264 directly. Many OpenCV builds (incl. mac) ship openh264.
+        for tag in ("avc1", "H264"):
+            writer = cv2.VideoWriter(
+                path, cv2.VideoWriter_fourcc(*tag), self.config.fps, (w, h)
+            )
+            if writer.isOpened():
+                return writer, False
+            writer.release()
+
+        # 2) Fall back to mp4v (always works for writing, but not web-playable).
+        writer = cv2.VideoWriter(
+            path, cv2.VideoWriter_fourcc(*"mp4v"), self.config.fps, (w, h)
+        )
+        if writer.isOpened():
+            return writer, self.config.transcode_to_h264
+        writer.release()
+        return None, False
+
+    def _transcode_to_h264(self) -> None:
+        """Re-encode the just-written mp4v clip to H.264 in place via ffmpeg."""
+        ffmpeg = shutil.which("ffmpeg")
+        src = self._video_path
+        if not ffmpeg or src is None:
+            logger.warning(
+                "Clip %s is mp4v (not browser-playable) and ffmpeg isn't "
+                "installed. Install ffmpeg for web playback.", src.name if src else "?",
+            )
+            return
+        tmp = src.with_suffix(".h264.mp4")
+        cmd = [
+            ffmpeg, "-y", "-i", str(src),
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart", "-an", str(tmp),
+            "-loglevel", "error",
+        ]
+        try:
+            subprocess.run(cmd, check=True)
+            tmp.replace(src)  # swap the H.264 file in for the original
+            logger.info("Transcoded %s to H.264", src.name)
+        except subprocess.CalledProcessError as exc:
+            logger.error("ffmpeg transcode failed for %s: %s", src.name, exc)
+            tmp.unlink(missing_ok=True)
+
     def _finalize_clip(self, now: float) -> RecordingMetadata:
         assert self._writer is not None and self._video_path is not None
         self._writer.release()
         self._recording = False
+
+        if self._needs_transcode:
+            self._transcode_to_h264()
 
         duration = round(self._frame_count / self.config.fps, 2)
         w, h = self._frame_size  # type: ignore[misc]

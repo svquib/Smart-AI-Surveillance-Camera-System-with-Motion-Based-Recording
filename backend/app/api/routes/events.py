@@ -1,11 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.logging import get_logger
 from app.db.session import get_db
 from app.models.event import Event
 from app.models.user import User
 from app.schemas.event import EventCreate, EventOut
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -51,3 +56,31 @@ def get_event(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     return event
+
+
+@router.delete("/{event_id}", status_code=204)
+def delete_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Delete an event, its alerts (cascade), and the files on disk."""
+    event = db.get(Event, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    # Remove the clip, snapshot, and the .json sidecar next to the clip.
+    to_remove = [event.video_path, event.snapshot_path]
+    if event.video_path:
+        to_remove.append(str(Path(event.video_path).with_suffix(".json")))
+    for p in to_remove:
+        if not p:
+            continue
+        try:
+            Path(p).unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning("Could not delete %s: %s", p, exc)
+
+    db.delete(event)  # alerts go with it via cascade
+    db.commit()
+    return Response(status_code=204)

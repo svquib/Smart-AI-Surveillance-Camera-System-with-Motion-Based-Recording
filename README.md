@@ -18,10 +18,10 @@ piece can be tested on its own before the next one goes on top.
 - [x] **Phase 5** – Object detection with YOLOv11
 - [x] **Phase 6** – Activity recognition with MediaPipe Pose
 - [x] **Phase 7** – FastAPI backend: JWT auth + cameras/events/alerts/recordings
-- [ ] **Phase 8** – Database integration (Alembic, pipeline writes events)
-- [ ] **Phase 9** – React dashboard
-- [ ] **Phase 10** – SOS alerts (Telegram)
-- [ ] **Phase 11** – Docker
+- [x] **Phase 8** – Database integration (Alembic, pipeline writes events + alerts)
+- [x] **Phase 9** – React dashboard (login, live feed, events, alerts)
+- [x] **Phase 10** – SOS alerts (Telegram)
+- [x] **Phase 11** – Docker (compose: Postgres + API + dashboard)
 
 ## Stack
 
@@ -146,6 +146,58 @@ python scripts/preview_activity.py       # Phase 6 - pose skeleton + activity
 
 macOS will ask for camera permission the first time — allow it for your
 terminal under System Settings → Privacy & Security → Camera.
+
+## Frontend dashboard (Phase 9)
+
+The React app lives in `frontend/`. With the backend running, in a new terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173, register/login, and you get:
+- **Dashboard** – live MJPEG feed (Start/Stop), latest detection, event/alert counts
+- **Events** – every recorded event, click a row to play its clip
+- **Alerts** – emergency/suspicious/info alerts with ack/resolve buttons
+
+The backend already allows the Vite origin (localhost:5173) via CORS. The live
+feed and the `run_surveillance.py` pipeline both want the webcam, so run one at
+a time.
+
+## Docker (Phase 11)
+
+Brings up Postgres + the API + the dashboard in one shot:
+
+```bash
+docker compose up --build
+```
+
+- Dashboard → http://localhost:5173
+- API       → http://localhost:8000/docs
+- Postgres  → localhost:5432 (user/pass/db: surveil/surveil/surveillance)
+
+Pass Telegram creds through the environment if you want alerts from the
+container:
+
+```bash
+SECRET_KEY=something TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... docker compose up --build
+```
+
+**The camera caveat.** The webcam pipeline (`run_surveillance.py`) and the live
+MJPEG feed need direct camera access, which Docker Desktop on macOS can't give a
+container. So the dockerised stack runs the API, DB, and dashboard; run the
+camera pipeline on the host. To feed events into the dockerised Postgres, point
+the host pipeline at it:
+
+```bash
+DATABASE_URL=postgresql+psycopg2://surveil:surveil@localhost:5432/surveillance \
+  python scripts/run_surveillance.py --camera-id 1 --device mps
+```
+
+(On a Linux host you can instead pass `--device /dev/video0` into the container
+and run everything in Docker.)
 
 ## Running tests
 
