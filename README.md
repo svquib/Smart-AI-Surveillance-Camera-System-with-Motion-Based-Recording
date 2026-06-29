@@ -1,129 +1,163 @@
 # Smart AI Surveillance Camera System
 
-Motion-based recording, object classification, suspicious-activity detection, and emergency SOS alerts — built as a real-world, production-style system.
+A surveillance system that doesn't waste resources recording an empty room. It
+watches a camera feed, only records when something actually moves, figures out
+*what* moved (person, animal, vehicle) and *what they're doing* (walking,
+running, falling), flags anything suspicious, and exposes the whole thing
+through a REST API.
 
-This project is built **phase by phase**. You are currently at **Phase 1 — Project setup & environment**.
+I'm building this in phases rather than dumping everything at once, so each
+piece can be tested on its own before the next one goes on top.
 
-## Tech stack
+## Where it's at
 
-| Layer | Technology |
-|-------|-----------|
-| Backend API | Python, FastAPI, Uvicorn |
-| Data | SQLAlchemy + SQLite (dev) / PostgreSQL (prod) |
-| Computer vision | OpenCV, YOLOv11 (Ultralytics), MediaPipe Pose, PyTorch |
-| Frontend | React, Tailwind CSS, Axios, WebSocket |
-| Storage | Local filesystem (S3 as a future option) |
-| Notifications | Telegram Bot API (email optional) |
-| Auth | JWT |
-| Deployment | Docker |
+- [x] **Phase 1** – Project setup, config, FastAPI skeleton
+- [x] **Phase 2** – Camera connection (webcam + RTSP) with OpenCV
+- [x] **Phase 3** – Motion detection (background subtraction / frame diff)
+- [x] **Phase 4** – Motion-based recording with pre-roll + cooldown
+- [x] **Phase 5** – Object detection with YOLOv11
+- [x] **Phase 6** – Activity recognition with MediaPipe Pose
+- [x] **Phase 7** – FastAPI backend: JWT auth + cameras/events/alerts/recordings
+- [ ] **Phase 8** – Database integration (Alembic, pipeline writes events)
+- [ ] **Phase 9** – React dashboard
+- [ ] **Phase 10** – SOS alerts (Telegram)
+- [ ] **Phase 11** – Docker
 
-## Roadmap
+## Stack
 
-1. **Project setup & environment** ← _you are here_
-2. Camera connection (OpenCV)
-3. Motion detection
-4. Motion-based recording
-5. YOLOv11 object detection
-6. Activity recognition (MediaPipe Pose)
-7. FastAPI backend (auth, cameras, events, alerts)
-8. Database integration
-9. React dashboard
-10. SOS alerts (Telegram)
-11. Docker deployment
+Python + FastAPI + SQLAlchemy on the backend (SQLite for dev, Postgres for
+prod). OpenCV / YOLOv11 / MediaPipe for the vision side. JWT for auth. React +
+Tailwind for the dashboard (later). Telegram for alerts (later).
 
-## Project structure
+## How the vision pipeline fits together
+
+The whole point is to do expensive work only when it's worth it:
 
 ```
-.
-├── backend/
-│   ├── app/
-│   │   ├── main.py            # FastAPI app factory + entrypoint
-│   │   ├── core/              # config, logging, security
-│   │   ├── api/               # routers (health now; auth/events/... later)
-│   │   │   ├── router.py
-│   │   │   └── routes/
-│   │   ├── db/                # SQLAlchemy engine/session (Phase 8)
-│   │   ├── models/            # ORM models (Phase 8)
-│   │   ├── schemas/           # Pydantic request/response models
-│   │   ├── services/          # business logic (recording, alerts, ...)
-│   │   ├── vision/            # OpenCV / YOLO / MediaPipe pipelines (Phase 2-6)
-│   │   └── utils/             # helpers
-│   ├── tests/                 # pytest suite
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/                  # React app (Phase 9)
-├── storage/
-│   ├── recordings/            # saved video clips
-│   └── snapshots/             # saved alert snapshots
-├── .gitignore
-└── README.md
+Camera frame
+   │
+   ▼
+Motion?  ──no──►  do nothing (cheap, runs all day)
+   │yes
+   ▼
+YOLOv11  →  what's in frame (person/cat/dog/vehicle/…)
+   │
+   ▼
+MediaPipe Pose  →  what they're doing (standing/walking/running/falling)
+   │
+   ▼
+Record clip (with the few seconds *before* motion) + log the event
 ```
 
-### Why this layout (clean architecture)
+Each stage is its own module under `backend/app/vision/`, so the motion
+detector has no idea YOLO exists, YOLO has no idea pose estimation exists, etc.
+That separation is what's kept things sane across seven phases.
 
-The code is split by **responsibility**, not by phase, so each layer can change independently:
+## Project layout
 
-- `api/` only handles HTTP concerns (routing, request/response).
-- `services/` holds business logic and is callable from API routes, the camera worker, or tests.
-- `vision/` isolates all OpenCV/ML code so the rest of the app never imports heavy CV libraries directly.
-- `models/` + `db/` own persistence.
-- `core/config.py` is the single source of truth for settings, loaded from environment variables.
+```
+backend/
+  app/
+    main.py            FastAPI app + startup
+    core/              config, logging, security (JWT/passwords)
+    api/
+      router.py        pulls all routers together
+      deps.py          get_current_user, etc.
+      routes/          health, auth, cameras, events, alerts, recordings
+    db/                engine, session, Base
+    models/            User, Camera, Event, Alert (SQLAlchemy)
+    schemas/           Pydantic request/response models
+    services/          recorder.py (more business logic lands here)
+    vision/            camera, motion, detector, pose, activity
+  scripts/             standalone test tools for each vision phase
+  tests/
+  requirements.txt
+  .env.example
+storage/
+  recordings/          saved clips + .json sidecars
+  snapshots/           trigger-moment stills
+frontend/              React app (Phase 9)
+```
 
-This separation is what keeps the project maintainable as it grows to 11 phases.
+## Getting it running
 
-## Setup (Phase 1)
-
-Requires **Python 3.11+**.
+You need Python 3.11+. On macOS the command is `python3`.
 
 ```bash
 cd backend
-
-# 1. Create and activate a virtual environment
-python -m venv .venv
-source .venv/bin/activate           # Windows: .venv\Scripts\activate
-
-# 2. Install Phase 1 dependencies
+python3 -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-# 3. Create your local env file
-cp .env.example .env                 # Windows: copy .env.example .env
+cp .env.example .env                 # then edit SECRET_KEY at least
 ```
 
-> The computer-vision packages (OpenCV, Ultralytics/YOLOv11, MediaPipe, Torch)
-> are intentionally **commented out** in `requirements.txt`. They are large and
-> only needed from Phase 2 onward. Install them when you reach those phases.
+> Heads up: `requirements.txt` pulls in PyTorch (via ultralytics) and
+> mediapipe, so the first install is a big download. numpy is pinned to 1.26.x
+> on purpose — ultralytics doesn't support numpy 2.x yet.
 
-## Run
+Start the API:
 
 ```bash
-# from backend/, with the venv active
 uvicorn app.main:app --reload
 ```
 
-Then open:
+- Swagger UI:  http://localhost:8000/docs
+- Health:      http://localhost:8000/api/v1/health
 
-- API root: http://localhost:8000/
-- Interactive docs (Swagger): http://localhost:8000/docs
-- Health check: http://localhost:8000/api/v1/health
+### Trying the API
 
-A healthy response looks like:
+Everything except `/health` needs a token. Quickest path through Swagger:
 
-```json
-{ "status": "ok", "app": "Smart AI Surveillance System", "version": "0.1.0", ... }
-```
+1. `POST /api/v1/auth/register` with a name/email/password.
+2. Click **Authorize** (top right), enter the same email/password — Swagger
+   grabs a token and attaches it to every request after that.
+3. Now `POST /api/v1/cameras` to add a camera, `GET /api/v1/events`, etc.
 
-## Test
+Or from the terminal:
 
 ```bash
-# from backend/, with the venv active
+# register
+curl -X POST localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Admin","email":"admin@test.com","password":"secret123"}'
+
+# login -> grab the access_token
+curl -X POST localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@test.com","password":"secret123"}'
+
+# use it
+curl localhost:8000/api/v1/cameras -H "Authorization: Bearer <token>"
+```
+
+## Testing the vision side (no API needed)
+
+Each phase has a standalone script under `backend/scripts/` so you can eyeball
+it working. Run them from `backend/` with the venv active:
+
+```bash
+python scripts/preview_camera.py        # Phase 2 - raw feed
+python scripts/preview_motion.py        # Phase 3 - motion boxes
+python scripts/record_on_motion.py      # Phase 4 - records clips on motion
+python scripts/preview_detection.py     # Phase 5 - YOLO labels  (--device mps on Apple)
+python scripts/detect_on_motion.py      # Phase 5 - YOLO only when motion
+python scripts/preview_activity.py       # Phase 6 - pose skeleton + activity
+```
+
+macOS will ask for camera permission the first time — allow it for your
+terminal under System Settings → Privacy & Security → Camera.
+
+## Running tests
+
+```bash
 pytest -q
 ```
 
-Both smoke tests (`/` and `/api/v1/health`) should pass.
+## Notes / things I'd still improve
 
-## Possible improvements
-
-- Add `ruff` + `black` + `pre-commit` for linting/formatting.
-- Add a `pyproject.toml` to formalise the package and pin Python version.
-- Split `requirements.txt` into `base` / `vision` / `dev` files.
-- Add structured (JSON) logging once running under Docker.
+- Motion + detection currently run in the request/script thread. Moving capture
+  to its own thread would stop a slow consumer from dropping frames.
+- Fall detection is rule-based and needs calibrating to your camera angle —
+  treat it as "flag it for a human", not gospel.
+- Tokens don't refresh yet; for a real deployment I'd add refresh tokens and
+  proper user roles.

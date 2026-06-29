@@ -20,11 +20,18 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup / shutdown hooks. DB, camera workers, etc. attach here later."""
+    """Startup / shutdown hooks."""
     configure_logging()
-    # Ensure storage directories exist
     settings.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
     settings.SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Dev convenience: create tables if missing. Set AUTO_CREATE_TABLES=false
+    # in .env once you're managing the schema with Alembic.
+    if settings.AUTO_CREATE_TABLES:
+        from app.db.base import Base  # imports all models
+        from app.db.session import engine
+        Base.metadata.create_all(bind=engine)
+
     logger.info("Starting %s (env=%s)", settings.APP_NAME, settings.ENVIRONMENT)
     yield
     logger.info("Shutting down %s", settings.APP_NAME)

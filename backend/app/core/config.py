@@ -38,6 +38,9 @@ class Settings(BaseSettings):
 
     # --- Database (used from Phase 8 onward) ---
     DATABASE_URL: str = f"sqlite:///{BASE_DIR / 'surveillance.db'}"
+    # Create tables on startup. Fine for dev; turn OFF once Alembic owns the
+    # schema so migrations aren't silently bypassed.
+    AUTO_CREATE_TABLES: bool = True
 
     # --- Storage ---
     STORAGE_DIR: Path = BASE_DIR.parent / "storage"
